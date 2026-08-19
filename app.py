@@ -1,17 +1,18 @@
 import os # 운영 체제에서 사용할 수 있는 기능 제공 라이브러리
-from typing import Optional # None 값 허용
-from fastapi import FastAPI, UploadFile, File, Form
+from pydantic import BaseModel # None 값 허용
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 # ㄴ FastAPI: 웹 프레임워크, UploadFile: 파일 업로드 처리, File: 파일 업로드 필드, Form: 폼 데이터 처리
 # FastAPI 속도가 빠름 + 비동기 지원 + 코드 간결 = 처리속도 증가
 # Swagger 자동 생성! hhtp://localhost:8000/docs 에서 API 테스트 가능
 # React ➡️ FastAPI ➡️ LLM ➡️ VectorDB 구조
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from langchain_openai import ChatOpenAI # OpenAI 연동
 from langchain_openai import OpenAIEmbeddings # 텍스트 숫자 변환
 from langchain_community.vectorstores import Chroma # 벡터 데이터베이스, 유사도 검색 지원
 from langchain_community.document_loaders import PyPDFLoader # PDF에서 텍스트 추출, 문서화
 from langchain_text_splitters import RecursiveCharacterTextSplitter # 긴 텍스트 쪼갬
 from dotenv import load_dotenv # .env 파일에서 환경 변수 로드
+import requests # HTTP 요청 처리 라이브러리
+from bs4 import BeautifulSoup # HTML 파싱 라이브러리
 
 app = FastAPI() # FastAPI 서버 생성
 
@@ -29,8 +30,79 @@ ai_model = ChatOpenAI(
 
 embeddings = OpenAIEmbeddings()
 
+    # LLM아 이 형태로 대답해!
+class SkillAnalysis(BaseModel):
+    required_skills: list[str]
+    resume_skills: list[str]
+    matched_skills: list[str]
+    missing_skills: list[str]
+
 DB_PATH = "./chroma_db" # Chroma 벡터 DB 저장 경로
 
+def crawl_job_posting(url: str) -> str:
+    response = requests.get(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0"
+        },
+        timeout=10
+    )
+
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=400,
+            detail="채용공고를 가져오지 못했습니다."
+        )
+
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    # 필요 없는 태그 제거
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+
+    job_text = soup.get_text(
+        separator="\n",
+        strip=True
+    )
+
+    if not job_text:
+        raise HTTPException(
+            status_code=400,
+            detail="채용공고 내용을 가져오지 못했습니다."
+        )
+
+    return job_text
+
+
+def analyze_skills(resume_text: str, job_text: str):
+    prompt = f"""
+당신은 채용 분석 전문가입니다.
+
+지원자 이력서:
+{resume_text}
+
+채용공고:
+{job_text}
+
+다음 내용을 분석하세요.
+
+1. 채용공고에서 요구하는 기술을 추출하세요.
+2. 이력서에서 지원자가 가지고 있는 기술을 추출하세요.
+3. 두 기술 중 서로 일치하는 기술을 찾으세요.
+4. 채용공고에는 있지만 이력서에는 없는 기술을 찾으세요.
+
+기술 이름은 최대한 간결하게 작성하세요.
+예:
+Python, FastAPI, Docker, AWS, Kubernetes
+"""
+
+    structured_model = ai_model.with_structured_output(
+        SkillAnalysis
+    )
+
+    result = structured_model.invoke(prompt)
+
+    return result
 
 def create_vectorstore(pdf_path):
     # PDF 경로 읽기, 텍스트 데이터 변환
@@ -92,22 +164,10 @@ async def extract_text_from_file(upload_file: UploadFile) -> str:
 # async 비동기 처리 가능 뒤에는 함수 정의
 async def generate_questions( 
     resume: UploadFile = File(...), # 파일 형태 이력서 받음 / (...)은 필수 입력
-    job_description: Optional[str] = Form(None),
-    job_file: Optional[UploadFile] = File(None)
-): # 채용 공고를 일반 텍스트로 받다가 파일 + 텍스트 가능하게 바꿈
+    job_url : str = Form(...)
+): # 채용 공고를 문자열 + url 가능하게 변경
 
-    if not job_description and not job_file:
-        raise HTTPException(400, "job_description 또는 job_file 중 하나는 필요합니다")
-    # description, file 둘 중 하나 무조건 필요, 없을 시 400 에러
-
-
-    if job_file:
-        job_text = await extract_text_from_file(job_file)
-        # file 업로드 시 텍스트 추출 후 변수 저장
-    else:
-        job_text = job_description
-        # 파일 없을 시 str 타이핑 친 내용 저장
-    # 변수 새로 만든 이유 : 항상 str만 사용하면 됨.(PDF, HTML, 직접 입력 신경쓸 필요 없음)
+    job_text = crawl_job_posting(job_url)
 
     # 파일 없을 시 생성, 있으면 무시
     os.makedirs("uploads", exist_ok=True)
@@ -121,6 +181,33 @@ async def generate_questions(
 
     # 만들어둔 함수로 변수 설정
     vectordb = create_vectorstore(upload_path)
+
+    resume_docs = PyPDFLoader(upload_path).load()
+
+    resume_text = "\n".join(
+        doc.page_content for doc in resume_docs
+    )
+
+    skill_analysis = analyze_skills(
+        resume_text,
+        job_text
+        )
+
+    required_count = len(
+        skill_analysis.required_skills
+    )
+
+    matched_count = len(
+        skill_analysis.matched_skills
+    )
+
+    if required_count > 0:
+        match_rate = round(
+            matched_count / required_count * 100,
+            1
+        )
+    else:
+        match_rate = 0
 
     # Chroma에 검색기능 추가 후 리트리버
     retriever = vectordb.as_retriever(
@@ -149,9 +236,17 @@ async def generate_questions(
 {context}
 
 채용공고:
-{job_description}
+{job_text}
 
 기술 면접 질문 10개를 생성하라.
+
+특히 지원자의 부족한 기술을 중심으로 질문하라.
+
+부족한 기술:
+{skill_analysis.missing_skills}
+
+이미 보유한 기술:
+{skill_analysis.matched_skills}
 
 출력 형식:
 
@@ -166,5 +261,10 @@ async def generate_questions(
 
     # FastAPI에서 딕셔너리 -> JSON 변환(자동!)
     return {
+        "match_rate": match_rate,
+        "required_skills": skill_analysis.required_skills,
+        "resume_skills": skill_analysis.resume_skills,
+        "matched_skills": skill_analysis.matched_skills,
+        "missing_skills": skill_analysis.missing_skills,
         "questions": result.content
     }
