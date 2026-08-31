@@ -182,33 +182,6 @@ async def generate_questions(
     # 만들어둔 함수로 변수 설정
     vectordb = create_vectorstore(upload_path)
 
-    resume_docs = PyPDFLoader(upload_path).load()
-
-    resume_text = "\n".join(
-        doc.page_content for doc in resume_docs
-    )
-
-    skill_analysis = analyze_skills(
-        resume_text,
-        job_text
-        )
-
-    required_count = len(
-        skill_analysis.required_skills
-    )
-
-    matched_count = len(
-        skill_analysis.matched_skills
-    )
-
-    if required_count > 0:
-        match_rate = round(
-            matched_count / required_count * 100,
-            1
-        )
-    else:
-        match_rate = 0
-
     # Chroma에 검색기능 추가 후 리트리버
     retriever = vectordb.as_retriever(
         search_kwargs={"k": 5} # 5개 유사한 파일 가져옴
@@ -229,24 +202,50 @@ async def generate_questions(
     # 질문 관련 부분만 추출 후 전달
     # 토큰 사용량 줄임, 속도 빠름, 답변 정확도 올라감
 
+    skill_analysis = analyze_skills(
+        context,
+        job_text
+    )
+
+    required_count = len(
+        skill_analysis.required_skills
+    )
+
+    matched_count = len(
+        skill_analysis.matched_skills
+    )
+
+    if required_count > 0:
+        match_rate = round(
+            matched_count / required_count * 100,
+            1
+        )
+    else:
+        match_rate = 0
+
     prompt = f"""
 당신은 시니어 기술 면접관이다.
 
-지원자 이력서 정보:
+지원자 이력서 관련 정보:
 {context}
 
 채용공고:
 {job_text}
 
-기술 면접 질문 10개를 생성하라.
+기술 분석 결과:
 
-특히 지원자의 부족한 기술을 중심으로 질문하라.
+보유 기술:
+{skill_analysis.resume_skills}
+
+일치하는 기술:
+{skill_analysis.matched_skills}
 
 부족한 기술:
 {skill_analysis.missing_skills}
 
-이미 보유한 기술:
-{skill_analysis.matched_skills}
+위 정보를 기반으로 기술 면접 질문 10개를 생성하라.
+
+특히 부족한 기술과 채용공고에서 중요하게 요구하는 기술을 중심으로 질문하라.
 
 출력 형식:
 
@@ -254,12 +253,12 @@ async def generate_questions(
 2.
 3.
 ...
+10.
 """
 
-    # AI 모델 답변이 result 변수에 담김
     result = ai_model.invoke(prompt)
 
-    # FastAPI에서 딕셔너리 -> JSON 변환(자동!)
+    # 8. 결과 반환
     return {
         "match_rate": match_rate,
         "required_skills": skill_analysis.required_skills,
