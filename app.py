@@ -37,6 +37,16 @@ class SkillAnalysis(BaseModel):
     matched_skills: list[str]
     missing_skills: list[str]
 
+class InterviewQuestion(BaseModel):
+    questions: str
+    intent : str
+    evaluation_point : str
+    answer_direction : str
+    related_skill : str
+
+class InterviewQuestions(BaseModel):
+    questions : list[InterviewQuestion]
+    
 DB_PATH = "./chroma_db" # Chroma 벡터 DB 저장 경로
 
 def crawl_job_posting(url: str) -> str:
@@ -247,16 +257,21 @@ async def generate_questions(
 
 특히 부족한 기술과 채용공고에서 중요하게 요구하는 기술을 중심으로 질문하라.
 
-출력 형식:
+각 질문마다 다음 내용을 작성하라.
 
-1.
-2.
-3.
-...
-10.
+- question: 실제 면접 질문
+- intent: 이 질문을 하는 이유
+- evaluation_point: 면접관이 평가하려는 핵심 포인트
+- answer_direction: 지원자가 답변할 때 포함하면 좋은 내용
+- related_skill: 관련 기술
+
+질문은 서로 중복되지 않게 작성하라.
 """
 
-    result = ai_model.invoke(prompt)
+    structured_model = ai_model.with_structured_output(
+        InterviewQuestions
+    )
+    result = structured_model.invoke(prompt)
 
     # 8. 결과 반환
     return {
@@ -265,5 +280,5 @@ async def generate_questions(
         "resume_skills": skill_analysis.resume_skills,
         "matched_skills": skill_analysis.matched_skills,
         "missing_skills": skill_analysis.missing_skills,
-        "questions": result.content
+        "questions": result.questions
     }
