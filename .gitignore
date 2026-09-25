@@ -2,3 +2,5 @@
 venv/
 uploads
 __pycache__
+chroma_db
+.vscode
