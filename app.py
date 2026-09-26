@@ -1,20 +1,16 @@
 import os # 운영 체제에서 사용할 수 있는 기능 제공 라이브러리
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form
 # ㄴ FastAPI: 웹 프레임워크, UploadFile: 파일 업로드 처리, File: 파일 업로드 필드, Form: 폼 데이터 처리
 # FastAPI 속도가 빠름 + 비동기 지원 + 코드 간결 = 처리속도 증가
 # Swagger 자동 생성! hhtp://localhost:8000/docs 에서 API 테스트 가능
 # React ➡️ FastAPI ➡️ LLM ➡️ VectorDB 구조
 from langchain_openai import ChatOpenAI # OpenAI 연동
 from langchain_openai import OpenAIEmbeddings # 텍스트 숫자 변환
-from langchain_community.vectorstores import Chroma # 벡터 데이터베이스, 유사도 검색 지원
-from langchain_community.document_loaders import PyPDFLoader # PDF에서 텍스트 추출, 문서화
-from langchain_text_splitters import RecursiveCharacterTextSplitter # 긴 텍스트 쪼갬
 from dotenv import load_dotenv # .env 파일에서 환경 변수 로드
-from models.schemas import SkillAnalysis, InterviewQuestions # modles, schmas.py에서 모델 불러오기
-from services.resume_service import extract_text_from_file # resume_service.py에서 함수 불러오기
 from services.interview_service import generate_interview_questions
 from services.job_service import crawl_job_posting
 from services.skill_service import analyze_skills
+from  services.vector_service import create_vectorstore
 
 app = FastAPI() # FastAPI 서버 생성
 
@@ -35,29 +31,6 @@ embeddings = OpenAIEmbeddings()
     # LLM아 이 형태로 대답해!
     
 DB_PATH = "./chroma_db" # Chroma 벡터 DB 저장 경로
-
-def create_vectorstore(pdf_path):
-    # PDF 경로 읽기, 텍스트 데이터 변환
-    load_pdf = PyPDFLoader(pdf_path)
-    docs = load_pdf.load()
-
-    # LLM 문맥 제한 + 검색 효율 증가
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000, # 최대 길이 제한
-        chunk_overlap=200 # 겹치는 부분 설정 문맥 이해 때문
-    )
-
-    # 문서 쪼개기
-    chunks = splitter.split_documents(docs)
-
-    # 쪼갠 텍스트 -> 임베딩 모델 -> 벡터화 -> Chroma DB 저장
-    vectordb = Chroma.from_documents(
-        chunks,
-        embeddings,
-        persist_directory=DB_PATH
-    )
-
-    return vectordb
 
 # post 방식으로 제출한 데이터 처리 API
 @app.post("/generate_questions") # 서버주소/generate_questions 로 요청 시 처리해줌
@@ -80,7 +53,7 @@ async def generate_questions(
         f.write(await resume.read()) # 비동기 방식으로 파일 읽고 저장
 
     # 만들어둔 함수로 변수 설정
-    vectordb = create_vectorstore(upload_path)
+    vectordb = create_vectorstore(upload_path, embeddings, DB_PATH)
 
     # Chroma에 검색기능 추가 후 리트리버
     retriever = vectordb.as_retriever(
