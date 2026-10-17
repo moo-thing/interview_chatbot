@@ -15,3 +15,8 @@ class InterviewQuestion(BaseModel):
 
 class InterviewQuestions(BaseModel):
     questions : list[InterviewQuestion]
+
+class InterviewResponse(BaseModel):
+    match_rate: float
+    skill_analysis: SkillAnalysis
+    interview_questions: InterviewQuestions

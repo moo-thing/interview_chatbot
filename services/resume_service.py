@@ -36,3 +36,13 @@ async def extract_text_from_file(upload_file: UploadFile) -> str:
             status_code = 400,
             detail = "PDF, HTML, TXT 파일만 지원하니 다시 한 번 확인해주세요."
         )
+
+async def save_resume_file(resume, upload_dir="uploads"):
+    os.makedirs(upload_dir, exist_ok=True)
+
+    upload_path = os.path.join(upload_dir, resume.filename)
+
+    with open(upload_path, "wb") as f:
+        f.write(await resume.read())
+
+    return upload_path
