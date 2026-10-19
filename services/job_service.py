@@ -3,13 +3,20 @@ from bs4 import BeautifulSoup # HTML 파싱 라이브러리
 from fastapi import HTTPException
 
 def crawl_job_posting(url: str) -> str:
-    response = requests.get(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0"
-        },
-        timeout=10
-    )
+    try:
+        response = requests.get(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0"
+            },
+            timeout=10
+        )
+
+    except requests.exceptions.RequestException:
+        raise HTTPException(
+            status_code = 400,
+            detail = "채용 공고에 접속할 수 없습니다."
+        )
 
     if response.status_code != 200:
         raise HTTPException(

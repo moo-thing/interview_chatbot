@@ -5,6 +5,7 @@ from fastapi import UploadFile, HTTPException
 # Swagger 자동 생성! hhtp://localhost:8000/docs 에서 API 테스트 가능
 # React ➡️ FastAPI ➡️ LLM ➡️ VectorDB 구조
 from langchain_community.document_loaders import PyPDFLoader # PDF에서 텍스트 추출, 문서화
+from uuid import uuid4 # 고유한 파일 이름 생성
 
 async def extract_text_from_file(upload_file: UploadFile) -> str:
     # 업로드 파일 텍스트 추출 함수(비동기)
@@ -36,3 +37,43 @@ async def extract_text_from_file(upload_file: UploadFile) -> str:
             status_code = 400,
             detail = "PDF, HTML, TXT 파일만 지원하니 다시 한 번 확인해주세요."
         )
+
+# PDF 확장자만 허용
+# 파일마다 고유한 이름 사용 덮어쓰기 방지
+# 빈 파일 업로드 거부
+
+async def save_resume_file(resume, upload_dir="uploads"):
+    if not resume.filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=400,
+            detail="PDF 파일만 업로드할 수 있습니다."
+        )
+
+    os.makedirs(upload_dir, exist_ok=True)
+
+    upload_path = os.path.join(
+        upload_dir,
+        f"{uuid4().hex}.pdf"
+    )
+
+    MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB 설정
+
+    content = await resume.read()
+
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail="업로드된 파일이 비어 있습니다."
+        )
+
+    # 5mb 이상 파일 업로드 시 에러 발생
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail="파일 크기는 5MB 이하여야 합니다."
+        )
+
+    with open(upload_path, "wb") as f:
+        f.write(content)
+
+    return upload_path

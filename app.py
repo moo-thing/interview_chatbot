@@ -10,7 +10,9 @@ from dotenv import load_dotenv # .env 파일에서 환경 변수 로드
 from services.interview_service import generate_interview_questions
 from services.job_service import crawl_job_posting
 from services.skill_service import analyze_skills
-from  services.vector_service import create_vectorstore
+from services.vector_service import create_vectorstore
+from models.schemas import InterviewResponse
+from services.resume_service import save_resume_file
 
 app = FastAPI() # FastAPI 서버 생성
 
@@ -33,8 +35,10 @@ embeddings = OpenAIEmbeddings()
 DB_PATH = "./chroma_db" # Chroma 벡터 DB 저장 경로
 
 # post 방식으로 제출한 데이터 처리 API
-@app.post("/generate_questions") # 서버주소/generate_questions 로 요청 시 처리해줌
-# async 비동기 처리 가능 뒤에는 함수 정의
+@app.post(
+        "/generate_questions",
+        response_model = InterviewResponse) # 서버주소/generate_questions 로 요청 시 처리해줌
+                                            # async 비동기 처리 가능 뒤에는 함수 정의
 async def generate_questions( 
     resume: UploadFile = File(...), # 파일 형태 이력서 받음 / (...)은 필수 입력
     job_url : str = Form(...)
@@ -42,15 +46,17 @@ async def generate_questions(
 
     job_text = crawl_job_posting(job_url)
 
-    # 파일 없을 시 생성, 있으면 무시
-    os.makedirs("uploads", exist_ok=True)
+    # # 파일 없을 시 생성, 있으면 무시
+    # os.makedirs("uploads", exist_ok=True)
 
-    # 파일 저장 위치와 이름 설정
-    upload_path = f"uploads/{resume.filename}"
+    # # 파일 저장 위치와 이름 설정
+    # upload_path = f"uploads/{resume.filename}"
 
-    # 지정 경로에 업로드 파일 저장
-    with open(upload_path, "wb") as f:
-        f.write(await resume.read()) # 비동기 방식으로 파일 읽고 저장
+    # # 지정 경로에 업로드 파일 저장
+    # with open(upload_path, "wb") as f:
+    #     f.write(await resume.read()) # 비동기 방식으로 파일 읽고 저장
+
+    upload_path = await save_resume_file(resume) # resume_service.py에서 만든 함수로 파일 저장
 
     # 만들어둔 함수로 변수 설정
     vectordb = create_vectorstore(upload_path, embeddings, DB_PATH)
@@ -104,4 +110,8 @@ async def generate_questions(
         skill_analysis
     )
 
-    return result
+    return {
+        "match_rate" : match_rate,
+        "skill_analysis" : skill_analysis,
+        "interview_questions" : result
+    }
