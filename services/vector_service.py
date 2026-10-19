@@ -1,12 +1,19 @@
 from langchain_community.document_loaders import PyPDFLoader # PDF에서 텍스트 추출, 문서화
 from langchain_text_splitters import RecursiveCharacterTextSplitter # 긴 텍스트 쪼갬
 from langchain_community.vectorstores import Chroma # 벡터 데이터베이스, 유사도 검색 지원
+from fastapi import HTTPException
 
 
 def create_vectorstore(pdf_path, embeddings, db_path):
     # PDF 경로 읽기, 텍스트 데이터 변환
     load_pdf = PyPDFLoader(pdf_path)
     docs = load_pdf.load()
+
+    if not any(doc.page_content.strip() for doc in docs):
+        raise HTTPException(
+            status_code=400,
+            detail="PDF에서 텍스트를 추출할 수 없습니다."
+        )
 
     # LLM 문맥 제한 + 검색 효율 증가
     splitter = RecursiveCharacterTextSplitter(
