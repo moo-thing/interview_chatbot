@@ -59,59 +59,66 @@ async def generate_questions(
     upload_path = await save_resume_file(resume) # resume_service.py에서 만든 함수로 파일 저장
 
     # 만들어둔 함수로 변수 설정
-    vectordb = create_vectorstore(upload_path, embeddings, DB_PATH)
+    try:
+        # 벡터 DB 생성
+        vectordb = create_vectorstore(upload_path, embeddings, DB_PATH)
 
-    # Chroma에 검색기능 추가 후 리트리버
-    retriever = vectordb.as_retriever(
-        search_kwargs={"k": 5} # 5개 유사한 파일 가져옴
-    )
-
-    # 검색 수행 / 벡터 DB에서 유사한 문서 가져옴 / invoke는 str 형태로 받음
-    context_docs = retriever.invoke(
-        job_text
-    ) # 채용공고 임베딩 후 유사한 문서 검색
-    # 이력서에 기술을 서술해 놓고 채용공고에서 내가 가진 기술에 대한 공고를 
-
-    # 하나의 문자열로 변환(한 줄씩 띄워진 상태)
-    context = "\n".join(
-        [doc.page_content for doc in context_docs]
-    )
-
-    # 이력서가 30페이지면 API에 다 보내기엔 데이터도 많이 잡아먹음
-    # 질문 관련 부분만 추출 후 전달
-    # 토큰 사용량 줄임, 속도 빠름, 답변 정확도 올라감
-
-    skill_analysis = analyze_skills(
-        ai_model,
-        context,
-        job_text
-    )
-
-    required_count = len(
-        skill_analysis.required_skills
-    )
-
-    matched_count = len(
-        skill_analysis.matched_skills
-    )
-
-    if required_count > 0:
-        match_rate = round(
-            matched_count / required_count * 100,
-            1
+        # Chroma에 검색기능 추가 후 리트리버
+        retriever = vectordb.as_retriever(
+            search_kwargs={"k": 5} # 5개 유사한 파일 가져옴
         )
-    else:
-        match_rate = 0
 
-    result = generate_interview_questions(
-        ai_model,
-        context,
-        job_text,
-        skill_analysis
-    )
+        # 검색 수행 / 벡터 DB에서 유사한 문서 가져옴 / invoke는 str 형태로 받음
+        context_docs = retriever.invoke(
+            job_text
+        ) # 채용공고 임베딩 후 유사한 문서 검색
+        # 이력서에 기술을 서술해 놓고 채용공고에서 내가 가진 기술에 대한 공고를 
 
-    return {
-        "match_rate" : match_rate,
-        "skill_analysis" : skill_analysis,
-        "interview_questions" : result
-    }
+        # 하나의 문자열로 변환(한 줄씩 띄워진 상태)
+        context = "\n".join(
+            [doc.page_content for doc in context_docs]
+        )
+
+        # 이력서가 30페이지면 API에 다 보내기엔 데이터도 많이 잡아먹음
+        # 질문 관련 부분만 추출 후 전달
+        # 토큰 사용량 줄임, 속도 빠름, 답변 정확도 올라감
+
+        skill_analysis = analyze_skills(
+            ai_model,
+            context,
+            job_text
+        )
+
+        required_count = len(
+            skill_analysis.required_skills
+        )
+
+        matched_count = len(
+            skill_analysis.matched_skills
+        )
+
+        if required_count > 0:
+            match_rate = round(
+                matched_count / required_count * 100,
+                1
+            )
+        else:
+            match_rate = 0
+
+        result = generate_interview_questions(
+            ai_model,
+            context,
+            job_text,
+            skill_analysis
+        )
+
+        return {
+            "match_rate" : match_rate,
+            "skill_analysis" : skill_analysis,
+            "interview_questions" : result
+        }
+
+    finally:
+        # 업로드 파일 삭제
+        if os.path.exists(upload_path):
+            os.remove(upload_path)
