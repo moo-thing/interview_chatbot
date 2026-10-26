@@ -1,3 +1,6 @@
+import os
+from uuid import uuid4
+
 from langchain_community.document_loaders import PyPDFLoader # PDF에서 텍스트 추출, 문서화
 from langchain_text_splitters import RecursiveCharacterTextSplitter # 긴 텍스트 쪼갬
 from langchain_community.vectorstores import Chroma # 벡터 데이터베이스, 유사도 검색 지원
@@ -24,11 +27,18 @@ def create_vectorstore(pdf_path, embeddings, db_path):
     # 문서 쪼개기
     chunks = splitter.split_documents(docs)
 
+    # 요청마다 별도의 벡터 DB 경로 사용
+    request_db_path = os.path.join(
+        db_path,
+        uuid4().hex
+    )
+    os.makedirs(request_db_path, exist_ok = True)
+
     # 쪼갠 텍스트 -> 임베딩 모델 -> 벡터화 -> Chroma DB 저장
     vectordb = Chroma.from_documents(
         chunks,
         embeddings,
-        persist_directory=db_path
+        persist_directory=request_db_path
     )
 
     return vectordb
