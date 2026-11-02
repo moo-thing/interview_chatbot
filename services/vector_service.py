@@ -1,5 +1,6 @@
 import os
 from uuid import uuid4
+import shutil # 파일 및 디렉토리 작업을 위한 라이브러리
 
 from langchain_community.document_loaders import PyPDFLoader # PDF에서 텍스트 추출, 문서화
 from langchain_text_splitters import RecursiveCharacterTextSplitter # 긴 텍스트 쪼갬
@@ -35,10 +36,15 @@ def create_vectorstore(pdf_path, embeddings, db_path):
     os.makedirs(request_db_path, exist_ok = True)
 
     # 쪼갠 텍스트 -> 임베딩 모델 -> 벡터화 -> Chroma DB 저장
-    vectordb = Chroma.from_documents(
-        chunks,
-        embeddings,
-        persist_directory=request_db_path
-    )
+    try:
+        vectordb = Chroma.from_documents(
+            chunks,
+            embeddings,
+            persist_directory=request_db_path
+        )
 
-    return vectordb
+    except Exception:
+        shutil.rmtree(request_db_path, ignore_errors = True) # 벡터 DB 생성 실패 시 디렉토리 삭제
+        raise
+
+    return vectordb, request_db_path

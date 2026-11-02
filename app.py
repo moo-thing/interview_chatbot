@@ -13,6 +13,7 @@ from services.skill_service import analyze_skills
 from services.vector_service import create_vectorstore
 from models.schemas import InterviewResponse
 from services.resume_service import save_resume_file
+import shutil # 파일 및 디렉토리 작업을 위한 라이브러리
 
 app = FastAPI() # FastAPI 서버 생성
 
@@ -57,11 +58,12 @@ async def generate_questions(
     #     f.write(await resume.read()) # 비동기 방식으로 파일 읽고 저장
 
     upload_path = await save_resume_file(resume) # resume_service.py에서 만든 함수로 파일 저장
+    request_db_path = None # 벡터 DB 경로 초기화
 
     # 만들어둔 함수로 변수 설정
     try:
         # 벡터 DB 생성
-        vectordb = create_vectorstore(upload_path, embeddings, DB_PATH)
+        vectordb, request_db_path = create_vectorstore(upload_path, embeddings, DB_PATH)
 
         # Chroma에 검색기능 추가 후 리트리버
         retriever = vectordb.as_retriever(
@@ -122,3 +124,6 @@ async def generate_questions(
         # 업로드 파일 삭제
         if os.path.exists(upload_path):
             os.remove(upload_path)
+
+        if request_db_path and os.path.exists(request_db_path):
+            shutil.rmtree(request_db_path, ignore_errors = True)
